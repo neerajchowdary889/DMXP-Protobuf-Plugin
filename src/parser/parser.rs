@@ -1,6 +1,10 @@
 use crate::ast::*;
 use anyhow::{Result};
-
+use crate::parser::extract_string_value;
+use crate::parser::extract_number_value;
+use crate::parser::extract_bool_value;
+use regex::Regex;
+use crate::parser::is_field_line;
 /// Protobuf parser that converts .proto files to AST
 /// 
 /// This parser implements a line-by-line parsing approach for protobuf files,
@@ -170,7 +174,7 @@ impl ProtoParser {
                 self.parse_message_option(builder)?;
             }
             // Parse message fields
-            else if self.is_field_line(line) {
+            else if is_field_line(line) {
                 self.parse_field(builder)?;
             }
             
@@ -189,22 +193,58 @@ impl ProtoParser {
     fn parse_message_option(&mut self, builder: &mut AstBuilder) -> Result<()> {
         let line = self.lines[self.current_line].trim();
         
-        // Parse DMXP channel option
-        if line.contains("dmxp_channel") {
-            if let Some(channel_name) = self.extract_string_value(line, "dmxp_channel") {
-                let dmxp_options = DmxpMessageOptions {
-                    channel: Some(channel_name),
+        // Check if this is a DMXP option
+        if line.contains("dmxp_") {
+            // Get existing DMXP options or create new ones
+            let mut dmxp_options = builder.get_dmxp_message_options()
+                .map(|opt| opt.clone())  // Clone the existing options if they exist
+                .unwrap_or_else(|| DmxpMessageOptions {
+                    channel: None,
                     persistent: None,
                     buffer_size: None,
                     wal_enabled: None,
                     swap_enabled: None,
                     priority: None,
-                };
-                builder.set_dmxp_message_options(dmxp_options);
+                });
+            
+            // Handle each type of DMXP option
+            if line.contains("dmxp_channel") {
+                if let Some(channel_name) = extract_string_value(line, "dmxp_channel") {
+                    dmxp_options.channel = Some(channel_name);
+                }
             }
+            else if line.contains("dmxp_persistent") {
+                if let Some(persistent) = extract_bool_value(line, "dmxp_persistent") {
+                    dmxp_options.persistent = Some(persistent);
+                }
+            }
+            else if line.contains("dmxp_buffer_size") {
+                if let Some(size) = extract_number_value::<u32>(line, "dmxp_buffer_size") {
+                    dmxp_options.buffer_size = Some(size);
+                }
+            }
+            else if line.contains("dmxp_wal_enabled") {
+                if let Some(enabled) = extract_bool_value(line, "dmxp_wal_enabled") {
+                    dmxp_options.wal_enabled = Some(enabled);
+                }
+            }
+            else if line.contains("dmxp_swap_enabled") {
+                if let Some(enabled) = extract_bool_value(line, "dmxp_swap_enabled") {
+                    dmxp_options.swap_enabled = Some(enabled);
+                }
+            }
+            else if line.contains("dmxp_priority") {
+                if let Some(priority) = extract_number_value::<u32>(line, "dmxp_priority") {
+                    dmxp_options.priority = Some(priority as u32);
+                }
+            }
+    
+            // Set the updated options back
+            builder.set_dmxp_message_options(dmxp_options);
         }
         Ok(())
     }
+    
 
     /// Parse message fields (e.g., "string user_id = 1;")
     /// 
@@ -216,48 +256,62 @@ impl ProtoParser {
     fn parse_field(&mut self, builder: &mut AstBuilder) -> Result<()> {
         let line = self.lines[self.current_line].trim();
         let parts: Vec<&str> = line.split_whitespace().collect();
-        
-        if parts.len() >= 3 {
-            let field_type = self.parse_field_type(parts[0]);
-            let name = parts[1];
-            
-            // Debug output
-            println!("DEBUG: Parsing field line: '{}'", line);
-            println!("DEBUG: Parts: {:?}", parts);
-            
-            // Extract number from "name = number;" format
-            let number_part = parts[2].trim_end_matches(';');
-            let number = if number_part.contains('=') {
-                // Handle "name = number" format
-                let num_str = number_part.split('=').nth(1).unwrap_or("0").trim();
-                println!("DEBUG: Number string from = format: '{}'", num_str);
-                if num_str.is_empty() {
-                    return Err(anyhow::anyhow!("Empty number in field: {}", line));
-                }
-                num_str.parse::<i32>()?
-            } else {
-                // Handle "number;" format
-                println!("DEBUG: Number string from direct format: '{}'", number_part);
-                if number_part.is_empty() {
-                    return Err(anyhow::anyhow!("Empty number in field: {}", line));
-                }
-                number_part.parse::<i32>()?
-            };
-            
-            let field = Field {
-                name: name.to_string(),
-                field_type,
-                number,
-                label: if line.contains("repeated") { FieldLabel::Repeated } else { FieldLabel::Optional },
-                options: Vec::new(),
-                default_value: None,
-            };
-            
-            builder.add_field(field);
+    
+        if parts.len() < 3 {
+            return Ok(()); // not enough tokens to form a field
         }
+    
+        // Handle "repeated" keyword properly
+        let (label, field_type_token, name_token, number_token) = if parts[0] == "repeated" {
+            if parts.len() < 5 {
+                return Err(anyhow::anyhow!("Malformed repeated field: {}", line));
+            }
+            // repeated <type> <name> = <num>;
+            (
+                FieldLabel::Repeated,
+                parts[1], // type
+                parts[2], // name
+                &parts[4], // "3;"
+            )
+        } else {
+            // <type> <name> = <num>;
+            if parts.len() < 4 {
+                return Err(anyhow::anyhow!("Malformed field: {}", line));
+            }
+            (
+                FieldLabel::Optional,
+                parts[0], // type
+                parts[1], // name
+                &parts[3], // "3;"
+            )
+        };
+    
+        // Parse the field number
+        let number_str = number_token.trim_end_matches(';');
+        if number_str.is_empty() {
+            return Err(anyhow::anyhow!("Empty field number in line: {}", line));
+        }
+    
+        let number = number_str.parse::<i32>()
+            .map_err(|e| anyhow::anyhow!("Invalid field number '{}': {}", number_str, e))?;
+    
+        let field_type = self.parse_field_type(field_type_token);
+    
+        let field = Field {
+            name: name_token.to_string(),
+            field_type,
+            number,
+            label,
+            options: Vec::new(),
+            default_value: None,
+        };
+    
+        println!("DEBUG: Parsed field successfully → {:?} = {}", field.name, field.number);
+    
+        builder.add_field(field);
         Ok(())
     }
-
+    
     /// Parse field types from string representation to FieldType enum
     /// 
     /// # Arguments
@@ -366,7 +420,7 @@ impl ProtoParser {
         
         // Parse DMXP channels option - handle multiple channel declarations
         if line.contains("dmxp_channels") {
-            if let Some(channel_name) = self.extract_string_value(line, "dmxp_channels") {
+            if let Some(channel_name) = extract_string_value(line, "dmxp_channels") {
                 // Get existing service options or create new ones
                 let mut existing_options = builder.current_service
                     .as_ref()
@@ -387,7 +441,7 @@ impl ProtoParser {
         
         // Parse other service options (timeout, retry count, etc.)
         if line.contains("dmxp_timeout_ms") {
-            if let Some(timeout_str) = self.extract_string_value(line, "dmxp_timeout_ms") {
+            if let Some(timeout_str) = extract_string_value(line, "dmxp_timeout_ms") {
                 if let Ok(timeout_ms) = timeout_str.parse::<u32>() {
                     let mut existing_options = builder.current_service
                         .as_ref()
@@ -405,7 +459,7 @@ impl ProtoParser {
         }
         
         if line.contains("dmxp_retry_count") {
-            if let Some(retry_str) = self.extract_string_value(line, "dmxp_retry_count") {
+            if let Some(retry_str) = extract_string_value(line, "dmxp_retry_count") {
                 if let Ok(retry_count) = retry_str.parse::<u32>() {
                     let mut existing_options = builder.current_service
                         .as_ref()
@@ -433,26 +487,44 @@ impl ProtoParser {
     /// # Returns
     /// * `Result<()>` - Success or error if parsing fails
     fn parse_method(&mut self, builder: &mut AstBuilder) -> Result<()> {
-        let line = self.lines[self.current_line].trim();
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        
-        if parts.len() >= 4 {
-            let name = parts[1];
-            let input_type = parts[2].trim_matches('(');
-            let output_type = parts[4].trim_matches(')');
-            
+        let mut line = self.lines[self.current_line].trim().to_string();
+    
+        // Strip inline comments
+        if let Some(idx) = line.find("//") {
+            line.truncate(idx);
+        }
+        line = line.trim_end_matches(';').trim().to_string();
+    
+        // Ensure starts with rpc
+        if !line.starts_with("rpc ") {
+            return Ok(());
+        }
+    
+        // Use regex to be fully spacing-tolerant
+        // Matches: rpc <name>(<input>)returns(<output>)
+        let re = Regex::new(
+            r"^rpc\s+([A-Za-z_]\w*)\s*\(\s*([A-Za-z_]\w*)\s*\)\s*returns\s*\(\s*([A-Za-z_]\w*)\s*\)"
+        )?;
+    
+        if let Some(caps) = re.captures(&line) {
             let method = Method {
-                name: name.to_string(),
-                input_type: input_type.to_string(),
-                output_type: output_type.to_string(),
+                name: caps[1].to_string(),
+                input_type: caps[2].to_string(),
+                output_type: caps[3].to_string(),
                 options: Vec::new(),
                 dmxp_options: None,
             };
-            
+            println!(
+                "DEBUG: Parsed RPC -> name: {}, input: {}, output: {}",
+                method.name, method.input_type, method.output_type
+            );
             builder.add_method(method);
+        } else {
+            return Err(anyhow::anyhow!("Invalid RPC syntax: {}", line));
         }
+    
         Ok(())
-    }
+    }    
 
     /// Parse enum declarations (e.g., "enum OrderStatus { ... }")
     /// 
@@ -541,48 +613,5 @@ impl ProtoParser {
         Ok(())
     }
 
-    /// Check if a line represents a field declaration
-    /// 
-    /// Uses heuristics to determine if a line contains a field definition
-    /// by checking for type, name, and number pattern.
-    /// 
-    /// # Arguments
-    /// * `line` - The line to check
-    /// 
-    /// # Returns
-    /// * `bool` - True if the line appears to be a field declaration
-    fn is_field_line(&self, line: &str) -> bool {
-        // Simple heuristic: field lines contain a type, name, and number
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        parts.len() >= 3 && 
-        !line.starts_with("message") && 
-        !line.starts_with("service") && 
-        !line.starts_with("enum") &&
-        !line.starts_with("option") &&
-        !line.starts_with("rpc") &&
-        (parts[2].contains('=') || (parts.len() > 3 && parts[3].contains('=')))
-    }
-
-    /// Extract string values from option declarations
-    /// 
-    /// Parses option lines to extract quoted string values for specific keys.
-    /// 
-    /// # Arguments
-    /// * `line` - The line containing the option
-    /// * `key` - The key to extract the value for
-    /// 
-    /// # Returns
-    /// * `Option<String>` - The extracted string value or None if not found
-    fn extract_string_value(&self, line: &str, key: &str) -> Option<String> {
-        if let Some(start) = line.find(&format!("{} = ", key)) {
-            let value_start = start + key.len() + 3;
-            let value_part = &line[value_start..];
-            if let Some(end) = value_part.find(';') {
-                let value = &value_part[..end];
-                return value.trim_matches('"').to_string().into();
-            }
-        }
-        None
-    }
 }
 

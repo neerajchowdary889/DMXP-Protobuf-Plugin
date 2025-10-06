@@ -79,6 +79,10 @@ impl AstBuilder {
         }
     }
 
+    pub fn get_dmxp_message_options(&mut self) -> Option<&mut DmxpMessageOptions> {
+        self.current_message.as_mut().and_then(|m| m.dmxp_options.as_mut())
+    }
+
     pub fn start_service(&mut self, name: String) {
         self.current_service = Some(Service {
             name,

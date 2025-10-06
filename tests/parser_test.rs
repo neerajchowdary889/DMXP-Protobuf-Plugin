@@ -1,3 +1,4 @@
+use DMXP_Protobuf_Plugin::ast::AstBuilder;
 use DMXP_Protobuf_Plugin::parser::parser::ProtoParser;
 use DMXP_Protobuf_Plugin::utils::LoadFile;
 
@@ -31,4 +32,44 @@ mod tests {
             println!("Printing the full object: {:?}", parser);
         }
     }
+}
+
+#[test]
+fn test_parse_proto_with_dmxp_options() {
+    println!("Parsing test.proto");
+
+    let content = LoadFile::LoadFile("test.proto").expect("Failed to load test.proto");
+    let mut parser = ProtoParser::new(content);
+    let mut builder = AstBuilder::new();
+    
+    // Parse the proto file
+    let result = parser.parse();
+    assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
+    
+    // Get the parsed AST
+    let ast = builder.build();
+    
+    println!("AST generated successfully: {:#?}", ast);
+    // Verify that we have the expected messages with DMXP options
+    assert!(!ast.messages.is_empty(), "No messages found in the AST");
+    
+    // Check UserData message DMXP options
+    let user_data = ast.messages.iter()
+        .find(|m| m.name == "UserData")
+        .expect("UserData message not found");
+        
+    assert!(user_data.dmxp_options.is_some(), "DMXP options not found for UserData");
+    let dmxp_options = user_data.dmxp_options.as_ref().unwrap();
+    assert_eq!(dmxp_options.channel, Some("user_updates".to_string()));
+    
+    // Check OrderData message DMXP options
+    let order_data = ast.messages.iter()
+        .find(|m| m.name == "OrderData")
+        .expect("OrderData message not found");
+        
+    assert!(order_data.dmxp_options.is_some(), "DMXP options not found for OrderData");
+    let order_dmxp = order_data.dmxp_options.as_ref().unwrap();
+    assert_eq!(order_dmxp.channel, Some("order_events".to_string()));
+    
+    println!("AST generated successfully: {:#?}", ast);
 }

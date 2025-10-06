@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package dmxp_example;
+
+import "google/protobuf/descriptor.proto";
+
+// DMXP custom options
+extend google.protobuf.MessageOptions {
+  optional string dmxp_channel = 50001;
+
+}
+
+extend google.protobuf.ServiceOptions {
+  repeated string dmxp_channels = 50001;
+}
+
+// User data message that will be published to a channel
+message UserData {
+  option (dmxp_channel) = "user_updates";
+
+  
+  string user_id = 1;
+  string name = 2;
+  string email = 3;
+  int64 last_login = 4;
+  bool is_active = 5;
+}
+
+// Order data message for order processing
+message OrderData {
+  option (dmxp_channel) = "order_events";
+
+  
+  string order_id = 1;
+  string user_id = 2;
+  repeated OrderItem items = 3;
+  double total_amount = 4;
+  OrderStatus status = 5;
+  int64 created_at = 6;
+}
+
+// Order item sub-message
+message OrderItem {
+  string product_id = 1;
+  string product_name = 2;
+  int32 quantity = 3;
+  double unit_price = 4;
+}
+
+// Order status enum
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING = 1;
+  ORDER_STATUS_CONFIRMED = 2;
+  ORDER_STATUS_SHIPPED = 3;
+  ORDER_STATUS_DELIVERED = 4;
+  ORDER_STATUS_CANCELLED = 5;
+}
+
+// System metrics message for monitoring
+message SystemMetrics {
+  option (dmxp_channel) = "system_metrics";
+  
+  
+  string service_name = 1;
+  double cpu_usage = 2;
+  double memory_usage = 3;
+  int64 request_count = 4;
+  double response_time_avg = 5;
+  int64 timestamp = 6;
+}
+
+// Request/Response messages for RPC-style communication
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  UserData user = 1;
+  bool found = 2;
+}
+
+message CreateOrderRequest {
+  string user_id = 1;
+  repeated OrderItem items = 2;
+}
+
+message CreateOrderResponse {
+  string order_id = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Service definition with DMXP channels
+service UserService {
+  option (dmxp_channels) = "user_updates";
+  option (dmxp_channels) = "user_requests";
+  
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+}
+
+// Order processing service
+service OrderService {
+  option (dmxp_channels) = "order_events";
+  option (dmxp_channels) = "order_processing";
+  
+  rpc ProcessOrder(OrderData) returns (OrderData);
+  rpc UpdateOrderStatus(OrderData) returns (OrderData);
+}
+
+// Monitoring service
+service MonitoringService {
+  option (dmxp_channels) = "system_metrics";
+  option (dmxp_channels) = "health_checks";
+  
+  rpc GetMetrics(SystemMetrics) returns (SystemMetrics);
+  rpc HealthCheck(GetUserRequest) returns (GetUserResponse);
+}

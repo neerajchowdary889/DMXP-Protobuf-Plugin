@@ -1,6 +1,5 @@
 use crate::ast::*;
 use anyhow::{Result};
-use std::collections::HashMap;
 
 /// Protobuf parser that converts .proto files to AST
 /// 
@@ -65,10 +64,6 @@ impl ProtoParser {
                 self.parse_syntax(&mut builder)?;
             } else if line.starts_with("package") {
                 self.parse_package(&mut builder)?;
-            } else if line.starts_with("import") {
-                self.parse_import(&mut builder)?;
-            } else if line.starts_with("extend") {
-                self.parse_extension(&mut builder)?;
             } else if line.starts_with("message") {
                 self.parse_message(&mut builder)?;
             } else if line.starts_with("service") {
@@ -92,10 +87,15 @@ impl ProtoParser {
     /// * `Result<()>` - Success or error if parsing fails
     fn parse_syntax(&mut self, builder: &mut AstBuilder) -> Result<()> {
         let line = self.lines[self.current_line].trim();
-        if let Some(syntax) = line.strip_prefix("syntax = ").and_then(|s| s.strip_suffix(';')) {
-            let syntax = syntax.trim_matches('"');
-            builder.set_syntax(syntax.to_string());
+        
+        if let Some(rest) = line.strip_prefix("syntax") {
+            let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || c == '=').trim_start();
+            let syntax = rest.trim_end_matches(';').trim().trim_matches('\"');
+            if !syntax.is_empty() {
+                builder.set_syntax(syntax.to_string());
+            }
         }
+        
         Ok(())
     }
 
@@ -108,64 +108,8 @@ impl ProtoParser {
     /// * `Result<()>` - Success or error if parsing fails
     fn parse_package(&mut self, builder: &mut AstBuilder) -> Result<()> {
         let line = self.lines[self.current_line].trim();
-        if let Some(package) = line.strip_prefix("package ").and_then(|s| s.strip_suffix(';')) {
+        if let Some(package) = line.strip_prefix("package").and_then(|s| s.strip_suffix(';')) {
             builder.set_package(package.trim().to_string());
-        }
-        Ok(())
-    }
-
-    /// Parse import statements (e.g., "import \"google/protobuf/descriptor.proto\";")
-    /// 
-    /// # Arguments
-    /// * `builder` - The AST builder to add the import information to
-    /// 
-    /// # Returns
-    /// * `Result<()>` - Success or error if parsing fails
-    fn parse_import(&mut self, builder: &mut AstBuilder) -> Result<()> {
-        let line = self.lines[self.current_line].trim();
-        if let Some(import_path) = line.strip_prefix("import ").and_then(|s| s.strip_suffix(';')) {
-            let path = import_path.trim_matches('"');
-            let import = Import {
-                path: path.to_string(),
-                is_public: line.contains("public"),
-                is_weak: line.contains("weak"),
-            };
-            builder.add_import(import);
-        }
-        Ok(())
-    }
-
-    /// Parse extension declarations (e.g., "extend google.protobuf.MessageOptions")
-    /// 
-    /// Currently skips detailed parsing of extensions and just finds the closing brace.
-    /// This is a placeholder for future extension parsing functionality.
-    /// 
-    /// # Arguments
-    /// * `_builder` - The AST builder (unused in current implementation)
-    /// 
-    /// # Returns
-    /// * `Result<()>` - Success or error if parsing fails
-    fn parse_extension(&mut self, _builder: &mut AstBuilder) -> Result<()> {
-        // Skip extension parsing for now - focus on core functionality
-        // Find the closing brace to maintain proper parsing state
-        let mut brace_count = 0;
-        let mut found_opening = false;
-        
-        while self.current_line < self.lines.len() {
-            let line = self.lines[self.current_line].trim();
-            
-            if line.contains('{') {
-                brace_count += line.matches('{').count();
-                found_opening = true;
-            }
-            if line.contains('}') {
-                brace_count -= line.matches('}').count();
-                if found_opening && brace_count == 0 {
-                    break;
-                }
-            }
-            
-            self.current_line += 1;
         }
         Ok(())
     }

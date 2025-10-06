@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 pub struct ProtoFile {
     pub syntax: String,
     pub package: String,
-    pub imports: Vec<Import>,
     pub options: Vec<ProtoOption>,
     pub messages: Vec<Message>,
     pub services: Vec<Service>,
@@ -14,13 +13,6 @@ pub struct ProtoFile {
     pub dmxp_channels: Vec<DmxpChannel>,
 }
 
-/// Import statement
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Import {
-    pub path: String,
-    pub is_public: bool,
-    pub is_weak: bool,
-}
 
 /// Option definition
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -7,7 +7,6 @@ impl AstBuilder {
             current_file: ProtoFile {
                 syntax: "proto3".to_string(),
                 package: String::new(),
-                imports: Vec::new(),
                 options: Vec::new(),
                 messages: Vec::new(),
                 services: Vec::new(),
@@ -27,10 +26,6 @@ impl AstBuilder {
 
     pub fn set_package(&mut self, package: String) {
         self.current_file.package = package;
-    }
-
-    pub fn add_import(&mut self, import: Import) {
-        self.current_file.imports.push(import);
     }
 
     pub fn add_option(&mut self, option: ProtoOption) {

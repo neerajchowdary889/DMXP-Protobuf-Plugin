@@ -2,18 +2,6 @@ syntax = "proto3";
 
 package dmxp_example;
 
-import "google/protobuf/descriptor.proto";
-
-// DMXP custom options
-extend google.protobuf.MessageOptions {
-  optional string dmxp_channel = 50001;
-
-}
-
-extend google.protobuf.ServiceOptions {
-  repeated string dmxp_channels = 50001;
-}
-
 // User data message that will be published to a channel
 message UserData {
   option (dmxp_channel) = "user_updates";

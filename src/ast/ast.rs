@@ -11,12 +11,12 @@ impl AstBuilder {
                 messages: Vec::new(),
                 services: Vec::new(),
                 enums: Vec::new(),
-                extensions: Vec::new(),
                 dmxp_channels: Vec::new(),
             },
             current_message: None,
             current_service: None,
             current_enum: None,
+            message_stack: Vec::new(),
         }
     }
 
@@ -33,14 +33,11 @@ impl AstBuilder {
     }
 
     pub fn start_message(&mut self, name: String) {
-        if let Some(current_msg) = self.current_message.take() {
-            if let Some(parent_msg) = self.current_message.as_mut() {
-                parent_msg.nested_messages.push(current_msg);
-            } else {
-                self.current_file.messages.push(current_msg);
-            }
+        // If there’s already an active message, push it to the stack
+        if let Some(current) = self.current_message.take() {
+            self.message_stack.push(current);
         }
-        
+
         self.current_message = Some(Message {
             name,
             fields: Vec::new(),
@@ -52,15 +49,19 @@ impl AstBuilder {
     }
 
     pub fn end_message(&mut self) {
-        if let Some(message) = self.current_message.take() {
-            if let Some(parent_msg) = self.current_message.as_mut() {
-                parent_msg.nested_messages.push(message);
-            } else {
-                self.current_file.messages.push(message);
-            }
+        let Some(finished) = self.current_message.take() else {
+            eprintln!("Warning: end_message() called with no active message");
+            return;
+        };
+    
+        if let Some(mut parent) = self.message_stack.pop() {
+            parent.nested_messages.push(finished);
+            self.current_message = Some(parent);
+        } else {
+            self.current_file.messages.push(finished);
         }
     }
-
+    
     pub fn add_field(&mut self, field: Field) {
         if let Some(current_msg) = self.current_message.as_mut() {
             current_msg.fields.push(field);
@@ -146,10 +147,6 @@ impl AstBuilder {
         if let Some(current_enum) = self.current_enum.as_mut() {
             current_enum.values.push(value);
         }
-    }
-
-    pub fn add_extension(&mut self, extension: Extension) {
-        self.current_file.extensions.push(extension);
     }
 
     pub fn add_dmxp_channel(&mut self, channel: DmxpChannel) {

@@ -40,14 +40,13 @@ fn test_parse_proto_with_dmxp_options() {
 
     let content = LoadFile::LoadFile("test.proto").expect("Failed to load test.proto");
     let mut parser = ProtoParser::new(content);
-    let mut builder = AstBuilder::new();
     
     // Parse the proto file
     let result = parser.parse();
     assert!(result.is_ok(), "Parsing failed: {:?}", result.err());
     
-    // Get the parsed AST
-    let ast = builder.build();
+    // Use the parsed AST returned by the parser
+    let ast = result.unwrap();
     
     println!("AST generated successfully: {:#?}", ast);
     // Verify that we have the expected messages with DMXP options

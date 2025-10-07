@@ -9,7 +9,6 @@ pub struct ProtoFile {
     pub messages: Vec<Message>,
     pub services: Vec<Service>,
     pub enums: Vec<Enum>,
-    pub extensions: Vec<Extension>,
     pub dmxp_channels: Vec<DmxpChannel>,
 }
 
@@ -191,4 +190,5 @@ pub struct AstBuilder {
     pub current_message: Option<Message>,
     pub current_service: Option<Service>,
     pub current_enum: Option<Enum>,
+    pub message_stack: Vec<Message>,
 }

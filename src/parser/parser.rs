@@ -52,29 +52,32 @@ impl ProtoParser {
     /// Returns an error if the protobuf syntax is invalid or if parsing fails
     pub fn parse(&mut self) -> Result<ProtoFile> {
         let mut builder = AstBuilder::new();
+        self.current_line = 0;
         
-        // Process each line of the protobuf file
         while self.current_line < self.lines.len() {
             let line = self.lines[self.current_line].trim();
             
-            // Skip empty lines and comments
-            if line.is_empty() || line.starts_with("//") {
+            if line.is_empty() {
                 self.current_line += 1;
                 continue;
             }
             
-            // Route to appropriate parser based on line content
             if line.starts_with("syntax") {
                 self.parse_syntax(&mut builder)?;
-            } else if line.starts_with("package") {
+            } 
+            else if line.starts_with("package") {
                 self.parse_package(&mut builder)?;
-            } else if line.starts_with("message") {
+            } 
+            else if line.starts_with("message ") {
                 self.parse_message(&mut builder)?;
-            } else if line.starts_with("service") {
+            } 
+            else if line.starts_with("service ") {
                 self.parse_service(&mut builder)?;
-            } else if line.starts_with("enum") {
+            } 
+            else if line.starts_with("enum ") {
                 self.parse_enum(&mut builder)?;
             }
+            // Add other top-level declarations as needed
             
             self.current_line += 1;
         }
@@ -146,41 +149,42 @@ impl ProtoParser {
     /// # Returns
     /// * `Result<()>` - Success or error if parsing fails
     fn parse_message_body(&mut self, builder: &mut AstBuilder) -> Result<()> {
-        let mut brace_count = 1; // We already have one opening brace
+        // Skip the line with the message declaration
         self.current_line += 1;
         
-        while self.current_line < self.lines.len() && brace_count > 0 {
+        while self.current_line < self.lines.len() {
             let line = self.lines[self.current_line].trim();
             
-            // Skip empty lines and comments
-            if line.is_empty() || line.starts_with("//") {
+            // Skip empty lines
+            if line.is_empty() {
                 self.current_line += 1;
                 continue;
             }
             
-            // Track brace nesting
-            if line.contains('{') {
-                brace_count += line.matches('{').count();
-            }
-            if line.contains('}') {
-                brace_count -= line.matches('}').count();
-                if brace_count == 0 {
-                    break;
-                }
+            // Check for end of message
+            if line == "}" {
+                return Ok(());
             }
             
-            // Parse message options (like DMXP channel options)
-            if line.starts_with("option") {
+            // Parse different parts of the message
+            if line.starts_with("message ") {
+                self.parse_message(builder)?;
+            } 
+            else if line.starts_with("enum ") {
+                self.parse_enum(builder)?;
+            } 
+            else if line.starts_with("option ") {
                 self.parse_message_option(builder)?;
-            }
-            // Parse message fields
+            } 
             else if is_field_line(line) {
                 self.parse_field(builder)?;
             }
+            // Add support for oneof, extensions, etc. if needed
             
             self.current_line += 1;
         }
-        Ok(())
+        
+        Err(anyhow::anyhow!("Unexpected end of file while parsing message"))
     }
 
     /// Parse message-level options, particularly DMXP channel options

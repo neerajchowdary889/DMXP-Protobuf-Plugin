@@ -1,10 +1,7 @@
 use crate::ast::*;
 use anyhow::{Result};
-use crate::parser::extract_string_value;
-use crate::parser::extract_number_value;
-use crate::parser::extract_bool_value;
+use crate::parser::helpers::{extract_string_value, extract_number_value, extract_bool_value, is_field_line};
 use regex::Regex;
-use crate::parser::is_field_line;
 /// Protobuf parser that converts .proto files to AST
 /// 
 /// This parser implements a line-by-line parsing approach for protobuf files,

@@ -1,8 +1,10 @@
 mod ast;
 mod parser;
 mod utils;
+mod templateGen;
 
 use crate::parser::parse_proto_file;
+use crate::templateGen::{TemplateGenerator, Language};
 use anyhow::Result;
 
 fn main() -> Result<()> {
@@ -66,5 +68,30 @@ fn main() -> Result<()> {
     }
     
     println!("\nAST parsing completed successfully!");
+    
+    // Generate code for different languages
+    println!("\n=== GENERATING CODE ===");
+    
+    // Generate Rust code
+    println!("\n--- Generating Rust Code ---");
+    let rust_generator = TemplateGenerator::new(Language::Rust);
+    let rust_code = rust_generator.generate(&proto_file)?;
+    println!("Generated {} lines of Rust code", rust_code.lines().count());
+    
+    // Generate Go code
+    println!("\n--- Generating Go Code ---");
+    let go_generator = TemplateGenerator::new(Language::Go);
+    let go_code = go_generator.generate(&proto_file)?;
+    println!("Generated {} lines of Go code", go_code.lines().count());
+    
+    // Save generated code to files
+    std::fs::write("generated_rust.rs", rust_code)?;
+    std::fs::write("generated_go.go", go_code)?;
+    
+    println!("\nGenerated code saved to:");
+    println!("- generated_rust.rs");
+    println!("- generated_go.go");
+    
+    println!("\nTemplate generation completed successfully!");
     Ok(())
 }
